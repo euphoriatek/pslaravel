@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Prestashop;
+use Protechstudio\PrestashopWebService\PrestashopWebService AS PrestashopService;
 
 class ProductController extends Controller
 {
@@ -94,149 +95,203 @@ class ProductController extends Controller
     {
         $request->validate(
             [
-                'name' => 'required',
-                'price' => array('required','regex:/^\d{1,13}(\.\d{1,6})?$/'),
-                'reference' => 'required'
+                'json_file' => 'required|mimes:json'
             ]
         );
+        $file_path = public_path() . '/jsonfiles/' . $request->file('json_file')->getClientOriginalName();
+        $file = $request->file('json_file')->move(public_path() . '/jsonfiles', $request->file('json_file')->getClientOriginalName());
+        $content = \File::get($file_path);
+        $array = json_decode($content);
+        if ($array) {
+            foreach ($array as $key => $value) {
+                $xml = Prestashop::get(
+                    [
+                        'url' => config('prestashop-webservice.url').
+                        '/api/products?schema=blank'
+                    ]
+                );
+                $resources = $xml->children()->children();
 
-        $xml = Prestashop::get(
-            [
-                'url' => config('prestashop-webservice.url').
-                '/api/products?schema=blank'
-            ]
-        );
-        $resources = $xml->children()->children();
+                unset($resources->id);
+                unset($resources->position_in_category);
+                unset($resources->id_shop_default);
+                unset($resources->date_add);
+                unset($resources->date_upd);
 
-        unset($resources->id);
-        unset($resources->position_in_category);
-        unset($resources->id_shop_default);
-        unset($resources->date_add);
-        unset($resources->date_upd);
+                unset($resources->associations->combinations);
+                unset($resources->associations->product_options_values);
+                unset($resources->associations->product_features);
+                unset(
+                    $resources->associations->stock_availables
+                        ->stock_available->id_product_attribute
+                );
+                $resources->id_manufacturer = '1';
+                $resources->id_supplier = '1';
+                $resources->id_category_default = 4;
+                $resources->new = '0';
+                ; //condition, new is also a php keyword!!
+                $resources->id_default_combination = '0';
+                $resources->id_tax_rules_group = 3;
+                $resources->reference = 'demo_1';
+                // $resources->minimal_quantity = $_POST['minimal_quantity'];
+                $resources->price = $value->price->store;
+                $resources->active = 1;
+                $resources->available_for_order = 1;
+                $resources->show_price = 1;
+                $resources->indexed = '1';
+                $resources->visibility = 'both';
+                $resources->advanced_stock_management='0';
+                $resources->pack_stock_type = 3;
+                $resources->state = 1;
 
-        unset($resources->associations->combinations);
-        unset($resources->associations->product_options_values);
-        unset($resources->associations->product_features);
-        unset(
-            $resources->associations->stock_availables
-                ->stock_available->id_product_attribute
-        );
+                $resources->associations->categories
+                    ->addChild('category')->addChild('id', $value->categories->category_id);
 
-        $resources->id_manufacturer = '1';
-        $resources->id_supplier = '1';
-        $resources->id_category_default = 4;
-        $resources->new = '0';
-        ; //condition, new is also a php keyword!!
-        $resources->id_default_combination = '0';
-        $resources->id_tax_rules_group =$_POST['id_tax_rules_group'];
-        $resources->reference = $_POST['reference'];
-        // $resources->minimal_quantity = $_POST['minimal_quantity'];
-        $resources->price = $_POST['price'];
-        $resources->active = 1;
-        $resources->available_for_order = 1;
-        $resources->show_price = 1;
-        $resources->indexed = '1';
-        $resources->visibility = 'both';
-        $resources->advanced_stock_management='0';
-        $resources->pack_stock_type = 3;
-        $resources->state = 1;
+                $node = dom_import_simplexml($resources->name->language[0][0]);
+                $no = $node->ownerDocument;
+                $node->appendChild($no->createCDATASection($value->texts->name));
+                $resources->name->language[0][0] = $value->texts->name;
+                $resources->name->language[0][0]['id'] = 1;
+                $resources->name->language[0][0]['xlink:href'] 
+                    = config('prestashop-webservice.url') . 
+                    '/api/languages/' . 1;
 
-        $resources->associations->categories
-            ->addChild('category')->addChild('id', 4);
+                $node = dom_import_simplexml($resources->description->language[0][0]);
+                $no = $node->ownerDocument;
+                $node->appendChild($no->createCDATASection($value->texts->description));
+                $resources->description->language[0][0] = $value->texts->description;
+                $resources->description->language[0][0]['id'] = 1;
+                $resources->description->language[0][0]['xlink:href'] 
+                    = config('prestashop-webservice.url') . 
+                    '/api/languages/' . 1;
 
-        $node = dom_import_simplexml($resources->name->language[0][0]);
-        $no = $node->ownerDocument;
-        $node->appendChild($no->createCDATASection($_POST['name']));
-        $resources->name->language[0][0] = $_POST['name'];
-        $resources->name->language[0][0]['id'] = 1;
-        $resources->name->language[0][0]['xlink:href'] 
-            = config('prestashop-webservice.url') . 
-            '/api/languages/' . 1;
+                $node = dom_import_simplexml($resources->description_short->language[0][0]);
+                $no = $node->ownerDocument;
+                $node->appendChild($no->createCDATASection($value->texts->title));
+                $resources->description_short->language[0][0] = $value->texts->title;
+                $resources->description_short->language[0][0]['id'] = 1;
+                $resources->description_short->language[0][0]['xlink:href'] 
+                    = config('prestashop-webservice.url') . 
+                    '/api/languages/' . 1;
 
-        $node = dom_import_simplexml($resources->description->language[0][0]);
-        $no = $node->ownerDocument;
-        $node->appendChild($no->createCDATASection($_POST['description']));
-        $resources->description->language[0][0] = $_POST['description'];
-        $resources->description->language[0][0]['id'] = 1;
-        $resources->description->language[0][0]['xlink:href'] 
-            = config('prestashop-webservice.url') . 
-            '/api/languages/' . 1;
+                $node = dom_import_simplexml($resources->link_rewrite->language[0][0]);
+                $no = $node->ownerDocument;
+                $node->appendChild($no->createCDATASection('test'));
+                $resources->link_rewrite->language[0][0] = 'test';
+                $resources->link_rewrite->language[0][0]['id'] = 1;
+                $resources->link_rewrite->language[0][0]['xlink:href'] 
+                    = config('prestashop-webservice.url') . 
+                    '/api/languages/' . 1;
 
-        $node = dom_import_simplexml($resources->description_short->language[0][0]);
-        $no = $node->ownerDocument;
-        $node->appendChild($no->createCDATASection($_POST['description_short']));
-        $resources->description_short->language[0][0] = $_POST['description_short'];
-        $resources->description_short->language[0][0]['id'] = 1;
-        $resources->description_short->language[0][0]['xlink:href'] 
-            = config('prestashop-webservice.url') . 
-            '/api/languages/' . 1;
+                $node = dom_import_simplexml($resources->meta_title->language[0][0]);
+                $no = $node->ownerDocument;
+                $node->appendChild($no->createCDATASection($value->texts->title));
+                $resources->meta_title->language[0][0] = $value->texts->title;
+                $resources->meta_title->language[0][0]['id'] = 1;
+                $resources->meta_title->language[0][0]['xlink:href'] 
+                    = config('prestashop-webservice.url') . 
+                    '/api/languages/' . 1;
 
-        $node = dom_import_simplexml($resources->link_rewrite->language[0][0]);
-        $no = $node->ownerDocument;
-        $node->appendChild($no->createCDATASection('test'));
-        $resources->link_rewrite->language[0][0] = 'test';
-        $resources->link_rewrite->language[0][0]['id'] = 1;
-        $resources->link_rewrite->language[0][0]['xlink:href'] 
-            = config('prestashop-webservice.url') . 
-            '/api/languages/' . 1;
+                $node = dom_import_simplexml($resources->meta_description->language[0][0]);
+                $no = $node->ownerDocument;
+                $node->appendChild($no->createCDATASection($value->texts->meta_description));
+                $resources->meta_description->language[0][0] = $value->texts->meta_description;
+                $resources->meta_description->language[0][0]['id'] = 1;
+                $resources->meta_description->language[0][0]['xlink:href'] 
+                    = config('prestashop-webservice.url') . 
+                    '/api/languages/' . 1;
 
-        $node = dom_import_simplexml($resources->meta_title->language[0][0]);
-        $no = $node->ownerDocument;
-        $node->appendChild($no->createCDATASection($_POST['name'].' title'));
-        $resources->meta_title->language[0][0] = $_POST['name'].' title';
-        $resources->meta_title->language[0][0]['id'] = 1;
-        $resources->meta_title->language[0][0]['xlink:href'] 
-            = config('prestashop-webservice.url') . 
-            '/api/languages/' . 1;
+                $node = dom_import_simplexml($resources->meta_keywords->language[0][0]);
+                $no = $node->ownerDocument;
+                $node->appendChild($no->createCDATASection($value->texts->meta_keywords));
+                $resources->meta_keywords->language[0][0] = $value->texts->meta_keywords;
+                $resources->meta_keywords->language[0][0]['id'] = 1;
+                $resources->meta_keywords->language[0][0]['xlink:href'] 
+                    = config('prestashop-webservice.url') . 
+                    '/api/languages/' . 1;
 
-        $node = dom_import_simplexml($resources->meta_description->language[0][0]);
-        $no = $node->ownerDocument;
-        $node->appendChild($no->createCDATASection($_POST['name'].' description'));
-        $resources->meta_description->language[0][0] = $_POST['name'].' description';
-        $resources->meta_description->language[0][0]['id'] = 1;
-        $resources->meta_description->language[0][0]['xlink:href'] 
-            = config('prestashop-webservice.url') . 
-            '/api/languages/' . 1;
+                $node = dom_import_simplexml($resources->available_now->language[0][0]);
+                $no = $node->ownerDocument;
+                $node->appendChild($no->createCDATASection('test'));
+                $resources->available_now->language[0][0] = 'test';
+                $resources->available_now->language[0][0]['id'] = 1;
+                $resources->available_now->language[0][0]['xlink:href'] 
+                    = config('prestashop-webservice.url') . 
+                    '/api/languages/' . 1;
 
-        $node = dom_import_simplexml($resources->meta_keywords->language[0][0]);
-        $no = $node->ownerDocument;
-        $node->appendChild($no->createCDATASection($_POST['name'].' keywords'));
-        $resources->meta_keywords->language[0][0] = $_POST['name'].' keywords';
-        $resources->meta_keywords->language[0][0]['id'] = 1;
-        $resources->meta_keywords->language[0][0]['xlink:href'] 
-            = config('prestashop-webservice.url') . 
-            '/api/languages/' . 1;
+                $node = dom_import_simplexml($resources->available_later->language[0][0]);
+                $no = $node->ownerDocument;
+                $node->appendChild($no->createCDATASection('test'));
+                $resources->available_later->language[0][0] = 'test';
+                $resources->available_later->language[0][0]['id'] = 1;
+                $resources->available_later->language[0][0]['xlink:href'] 
+                    = config('prestashop-webservice.url') . 
+                    '/api/languages/' . 1;
 
-        $node = dom_import_simplexml($resources->available_now->language[0][0]);
-        $no = $node->ownerDocument;
-        $node->appendChild($no->createCDATASection('test'));
-        $resources->available_now->language[0][0] = 'test';
-        $resources->available_now->language[0][0]['id'] = 1;
-        $resources->available_now->language[0][0]['xlink:href'] 
-            = config('prestashop-webservice.url') . 
-            '/api/languages/' . 1;
+                /*foreach ($value->texts->bulletpoints as $tag){
+                    $resources->associations->tags->addChild('tags')->addChild('id', $tag);
+                }*/
 
-        $node = dom_import_simplexml($resources->available_later->language[0][0]);
-        $no = $node->ownerDocument;
-        $node->appendChild($no->createCDATASection('test'));
-        $resources->available_later->language[0][0] = 'test';
-        $resources->available_later->language[0][0]['id'] = 1;
-        $resources->available_later->language[0][0]['xlink:href'] 
-            = config('prestashop-webservice.url') . 
-            '/api/languages/' . 1;
-
-
-        try {
-            $opt = array('resource' => 'products');
-            $opt['postXml'] = $xml->asXML();
-            $xml = Prestashop::add($opt);
-            $id = $xml->product->id;
-            return redirect()
-                ->route('product.index')
-                ->with('success', 'Product Added Successfully!');
-        } catch (Exception $e) {
-            echo $e->getMessage();
+                $opt = array('resource' => 'products');
+                $opt['postXml'] = $xml->asXML();
+                $xml = Prestashop::add($opt);
+                $id = $xml->product->id;
+                if($value->images) {
+                    foreach ($value->images as $image) {
+                        $this->uploadImage($id, $image);
+                    }
+                }
+            }
         }
+
+
+        return redirect()
+            ->route('product.index')
+            ->with('success', 'Product Added Successfully!');
+    }
+
+    public function createCategory()
+    {
+        $xmlSchema=Prestashop::getSchema('categories'); //returns a SimpleXMLElement instance with the desired schema
+
+        $data=[
+            'id_parent' => 9,
+            'name'=>'Piano',
+            'link_rewrite'=>'Piano',
+            'active'=>true,
+        ];
+        $postXml=Prestashop::fillSchema($xmlSchema,$data); 
+
+        //The xml is now ready for being sent back to the web service to create a new category
+
+        $response=Prestashop::add(['resource'=>'categories','postXml'=>$postXml->asXml()]);
+    }
+
+    public function uploadImage($productId='',$image_path='')
+    {
+        $urlImage = config('prestashop-webservice.url').'/api/images/products/'.$productId.'/';
+        $key  = config('prestashop-webservice.token');
+        //Here you set the path to the image you need to upload
+        $image_mime = $this->get_mime_type( $image_path );
+
+        $args['image'] = new \CurlFile($image_path, $image_mime);
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_HEADER, 1);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLINFO_HEADER_OUT, 1);
+        curl_setopt($ch, CURLOPT_URL, $urlImage);
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_USERPWD, $key.':');
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $args);
+        $result = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if (200 == $httpCode) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -253,7 +308,6 @@ class ProductController extends Controller
         $xml = Prestashop::get($opt);
         $resources = $xml->children()->children();
         $product = $this->xml2array($resources);
-
         $tax_rules_group = [
             'No tax',
             'IN Reduced Rate (4%)',
@@ -393,4 +447,75 @@ class ProductController extends Controller
 
         return $out;
     }
+
+    public function get_mime_type($filename) {
+    $idx = explode( '.', $filename );
+    $count_explode = count($idx);
+    $idx = strtolower($idx[$count_explode-1]);
+
+    $mimet = array( 
+        'txt' => 'text/plain',
+        'htm' => 'text/html',
+        'html' => 'text/html',
+        'php' => 'text/html',
+        'css' => 'text/css',
+        'js' => 'application/javascript',
+        'json' => 'application/json',
+        'xml' => 'application/xml',
+        'swf' => 'application/x-shockwave-flash',
+        'flv' => 'video/x-flv',
+
+        // images
+        'png' => 'image/png',
+        'jpe' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'jpg' => 'image/jpeg',
+        'gif' => 'image/gif',
+        'bmp' => 'image/bmp',
+        'ico' => 'image/vnd.microsoft.icon',
+        'tiff' => 'image/tiff',
+        'tif' => 'image/tiff',
+        'svg' => 'image/svg+xml',
+        'svgz' => 'image/svg+xml',
+
+        // archives
+        'zip' => 'application/zip',
+        'rar' => 'application/x-rar-compressed',
+        'exe' => 'application/x-msdownload',
+        'msi' => 'application/x-msdownload',
+        'cab' => 'application/vnd.ms-cab-compressed',
+
+        // audio/video
+        'mp3' => 'audio/mpeg',
+        'qt' => 'video/quicktime',
+        'mov' => 'video/quicktime',
+
+        // adobe
+        'pdf' => 'application/pdf',
+        'psd' => 'image/vnd.adobe.photoshop',
+        'ai' => 'application/postscript',
+        'eps' => 'application/postscript',
+        'ps' => 'application/postscript',
+
+        // ms office
+        'doc' => 'application/msword',
+        'rtf' => 'application/rtf',
+        'xls' => 'application/vnd.ms-excel',
+        'ppt' => 'application/vnd.ms-powerpoint',
+        'docx' => 'application/msword',
+        'xlsx' => 'application/vnd.ms-excel',
+        'pptx' => 'application/vnd.ms-powerpoint',
+
+
+        // open office
+        'odt' => 'application/vnd.oasis.opendocument.text',
+        'ods' => 'application/vnd.oasis.opendocument.spreadsheet',
+    );
+
+    if (isset( $mimet[$idx] )) {
+     return $mimet[$idx];
+    } else {
+     return 'application/octet-stream';
+    }
+ }
 }
